@@ -1,0 +1,3 @@
+# Auto-derived from local module replace directives in go.mod.
+# Rebuild bus-accounts when local replaced module sources change.
+MODULE_SRC_DEPS := bus-config bus-data bus-journal bus-update
