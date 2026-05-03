@@ -104,6 +104,39 @@ func TestDiscoverModuleWarmCacheAvoidsRunnerAcrossDiscoverers(t *testing.T) {
 	}
 }
 
+func TestDiscoverModuleRefreshCacheBypassesReadAndWritesFreshEntry(t *testing.T) {
+	workdir := t.TempDir()
+	cacheDir := filepath.Join(workdir, "cache")
+	binaryPath := filepath.Join(workdir, "bus-journal", "bin", "bus-journal")
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	firstRunner := &titlePathRunner{wantName: binaryPath, title: "bus-journal-old"}
+	first := Discoverer{Runner: firstRunner, BusCommand: "missing-bus", Workdir: workdir, CacheDir: cacheDir, UseCache: true}.DiscoverModule(context.Background(), "journal")
+	if !first.Found || first.Document.Info.Title != "bus-journal-old" {
+		t.Fatalf("first discovery title=%q warnings=%#v", first.Document.Info.Title, first.Warnings)
+	}
+	refreshRunner := &titlePathRunner{wantName: binaryPath, title: "bus-journal-new"}
+	refresh := Discoverer{Runner: refreshRunner, BusCommand: "missing-bus", Workdir: workdir, CacheDir: cacheDir, UseCache: true, RefreshCache: true}.DiscoverModule(context.Background(), "journal")
+	if !refresh.Found || refresh.Document.Info.Title != "bus-journal-new" {
+		t.Fatalf("refresh discovery title=%q warnings=%#v", refresh.Document.Info.Title, refresh.Warnings)
+	}
+	if refreshRunner.calls != 1 {
+		t.Fatalf("refresh runner calls = %d, want 1", refreshRunner.calls)
+	}
+	failingRunner := &pathSensitiveRunner{wantName: filepath.Join(workdir, "missing")}
+	warm := Discoverer{Runner: failingRunner, BusCommand: "missing-bus", Workdir: workdir, CacheDir: cacheDir, UseCache: true}.DiscoverModule(context.Background(), "journal")
+	if !warm.Found || warm.Document.Info.Title != "bus-journal-new" {
+		t.Fatalf("warm discovery title=%q warnings=%#v", warm.Document.Info.Title, warm.Warnings)
+	}
+	if failingRunner.sawLocalBinaryCount != 0 {
+		t.Fatalf("warm cache executed runner %d times", failingRunner.sawLocalBinaryCount)
+	}
+}
+
 func TestDiscoverModuleCacheDirEnvOverride(t *testing.T) {
 	workdir := t.TempDir()
 	cacheDir := filepath.Join(workdir, "env-cache")
@@ -263,6 +296,20 @@ func (r *pathSensitiveRunner) Run(ctx context.Context, name string, args []strin
 	r.sawLocalBinary = true
 	r.sawLocalBinaryCount++
 	return []byte(`{"opencli":"0.1.0","info":{"title":"bus-journal"}}`), nil, 0, nil
+}
+
+type titlePathRunner struct {
+	wantName string
+	title    string
+	calls    int
+}
+
+func (r *titlePathRunner) Run(ctx context.Context, name string, args []string, dir string) ([]byte, []byte, int, error) {
+	if name != r.wantName {
+		return nil, []byte("missing"), 127, errors.New("not found")
+	}
+	r.calls++
+	return []byte(`{"opencli":"0.1.0","info":{"title":"` + r.title + `"}}`), nil, 0, nil
 }
 
 type failingPathRunner struct {

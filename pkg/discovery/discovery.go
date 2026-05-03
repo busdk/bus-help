@@ -78,12 +78,13 @@ func (ExecRunner) Run(ctx context.Context, name string, args []string, dir strin
 //
 // Used by: bus-help and bus-configure app packages.
 type Discoverer struct {
-	Runner     Runner
-	BusCommand string
-	Timeout    time.Duration
-	Workdir    string
-	CacheDir   string
-	UseCache   bool
+	Runner       Runner
+	BusCommand   string
+	Timeout      time.Duration
+	Workdir      string
+	CacheDir     string
+	UseCache     bool
+	RefreshCache bool
 }
 
 // New creates a production Discoverer.
@@ -119,7 +120,7 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 	attempts := d.attempts(module)
 	for _, attempt := range attempts {
 		commandText := strings.TrimSpace(attempt.name + " " + strings.Join(attempt.args, " "))
-		if d.cacheEnabled() {
+		if d.cacheReadEnabled() {
 			if cached, ok := d.readCachedAttempt(attempt); ok {
 				if !cached.Success {
 					if cached.Message == "metadata command timed out" {
@@ -152,7 +153,7 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 		if err != nil || exitCode != 0 {
 			msg := warningMessage(stderr, err)
 			result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: msg})
-			if d.cacheEnabled() {
+			if d.cacheWriteEnabled() {
 				d.writeCachedFailure(attempt, exitCode, stderr, msg)
 			}
 			if attempt.local {
@@ -164,7 +165,7 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 		if err := json.Unmarshal(stdout, &doc); err != nil {
 			msg := fmt.Sprintf("invalid OpenCLI JSON: %s", err)
 			result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: msg})
-			if d.cacheEnabled() {
+			if d.cacheWriteEnabled() {
 				d.writeCachedFailure(attempt, exitCode, stderr, msg)
 			}
 			if attempt.local {
@@ -172,7 +173,7 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 			}
 			continue
 		}
-		if d.cacheEnabled() {
+		if d.cacheWriteEnabled() {
 			d.writeCachedSuccess(attempt, stdout)
 		}
 		result.Document = doc
@@ -246,10 +247,17 @@ func warningMessage(stderr []byte, err error) string {
 	return msg
 }
 
-// cacheEnabled reports whether live OpenCLI stdout caching may be used.
+// cacheReadEnabled reports whether live OpenCLI stdout cache reads may be used.
 //
 // Used by: DiscoverModule.
-func (d Discoverer) cacheEnabled() bool {
+func (d Discoverer) cacheReadEnabled() bool {
+	return d.cacheWriteEnabled() && !d.RefreshCache
+}
+
+// cacheWriteEnabled reports whether live OpenCLI stdout cache writes may be used.
+//
+// Used by: DiscoverModule and cacheReadEnabled.
+func (d Discoverer) cacheWriteEnabled() bool {
 	return d.UseCache && os.Getenv("BUS_OPENCLI_DISCOVERY_CACHE") != "0"
 }
 

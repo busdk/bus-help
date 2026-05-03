@@ -1,5 +1,7 @@
 # PLAN.md
 
+- [x] Support discovery cache refresh semantics end to end: add a `bus-help/pkg/discovery` option that skips cached reads for one request while preserving fresh cache writes, cover refresh behavior with deterministic unchanged-binary tests, keep default warm-cache behavior unchanged for `bus help` and consumers, and verify module plus scoped superproject gates.
+
 - [x] Complete shared environment description coverage for module-owned OpenCLI output: add real purpose text in `pkg/modulehelp` for currently missing Bus environment variables shown by `bus configure --help`, avoid exposing malformed prefix-only names as variables where possible, add tests that representative module metadata no longer emits empty/placeholder descriptions, rebuild affected modules as needed to refresh cacheable OpenCLI output, rerun `time bus configure --help`, and verify module plus scoped superproject gates.
 
 - [x] Add shared OpenCLI discovery performance coverage end to end: benchmark cache-key lookup, cold discovery, warm cached discovery, and warning-heavy fallback paths in `pkg/discovery`; assert warm cache avoids runner execution for unchanged module binaries; keep benchmarks hermetic with fake runners and temporary module binaries; document cache/profiling expectations for consumers such as `bus-configure`; and verify bus-help plus scoped consumer gates.
