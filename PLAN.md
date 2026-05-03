@@ -1,6 +1,6 @@
 # PLAN.md
 
-- [ ] Add shared OpenCLI discovery performance coverage end to end: benchmark cache-key lookup, cold discovery, warm cached discovery, and warning-heavy fallback paths in `pkg/discovery`; assert warm cache avoids runner execution for unchanged module binaries; keep benchmarks hermetic with fake runners and temporary module binaries; document cache/profiling expectations for consumers such as `bus-configure`; and verify bus-help plus scoped consumer gates.
+- [x] Add shared OpenCLI discovery performance coverage end to end: benchmark cache-key lookup, cold discovery, warm cached discovery, and warning-heavy fallback paths in `pkg/discovery`; assert warm cache avoids runner execution for unchanged module binaries; keep benchmarks hermetic with fake runners and temporary module binaries; document cache/profiling expectations for consumers such as `bus-configure`; and verify bus-help plus scoped consumer gates.
 
 - [x] Discover superproject module binaries for OpenCLI metadata end to end: extend live discovery so metadata consumers such as `bus-configure --help` can execute `bus-*/bin/bus-*` module binaries from a BusDK superproject checkout when modules are not installed on PATH, preserve existing `bus MODULE help --format opencli` and PATH binary attempts, keep explicit argv execution/timeouts, add unit coverage, and verify bus-help plus consumer gates.
 

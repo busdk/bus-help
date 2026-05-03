@@ -93,7 +93,7 @@ func New(workdir string) Discoverer {
 	return Discoverer{
 		Runner:     ExecRunner{},
 		BusCommand: "bus",
-		Timeout:    2 * time.Second,
+		Timeout:    750 * time.Millisecond,
 		Workdir:    workdir,
 		UseCache:   true,
 	}
@@ -114,15 +114,22 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 	}
 	timeout := d.Timeout
 	if timeout <= 0 {
-		timeout = 2 * time.Second
+		timeout = 750 * time.Millisecond
 	}
 	attempts := d.attempts(module)
 	for _, attempt := range attempts {
 		commandText := strings.TrimSpace(attempt.name + " " + strings.Join(attempt.args, " "))
 		if d.cacheEnabled() {
-			if stdout, ok := d.readCachedStdout(attempt); ok {
+			if cached, ok := d.readCachedAttempt(attempt); ok {
+				if !cached.Success {
+					result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: cached.Message})
+					if attempt.local {
+						break
+					}
+					continue
+				}
 				var doc opencli.Document
-				if err := json.Unmarshal(stdout, &doc); err == nil {
+				if err := json.Unmarshal(cached.Stdout, &doc); err == nil {
 					result.Document = doc
 					result.Found = true
 					return result
@@ -134,23 +141,39 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 		cancel()
 		if attemptCtx.Err() == context.DeadlineExceeded {
 			result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: "metadata command timed out"})
+			if d.cacheEnabled() {
+				d.writeCachedFailure(attempt, 0, nil, "metadata command timed out")
+			}
+			if attempt.local {
+				break
+			}
 			continue
 		}
 		if err != nil || exitCode != 0 {
-			msg := strings.TrimSpace(string(stderr))
-			if msg == "" && err != nil {
-				msg = err.Error()
-			}
+			msg := warningMessage(stderr, err)
 			result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: msg})
+			if d.cacheEnabled() {
+				d.writeCachedFailure(attempt, exitCode, stderr, msg)
+			}
+			if attempt.local {
+				break
+			}
 			continue
 		}
 		var doc opencli.Document
 		if err := json.Unmarshal(stdout, &doc); err != nil {
-			result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: fmt.Sprintf("invalid OpenCLI JSON: %s", err)})
+			msg := fmt.Sprintf("invalid OpenCLI JSON: %s", err)
+			result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: msg})
+			if d.cacheEnabled() {
+				d.writeCachedFailure(attempt, exitCode, stderr, msg)
+			}
+			if attempt.local {
+				break
+			}
 			continue
 		}
 		if d.cacheEnabled() {
-			d.writeCachedStdout(attempt, stdout)
+			d.writeCachedSuccess(attempt, stdout)
 		}
 		result.Document = doc
 		result.Found = true
@@ -163,8 +186,9 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 }
 
 type commandAttempt struct {
-	name string
-	args []string
+	name  string
+	args  []string
+	local bool
 }
 
 type discoveryCacheEntry struct {
@@ -172,7 +196,11 @@ type discoveryCacheEntry struct {
 	Args         []string `json:"args"`
 	Size         int64    `json:"size"`
 	ModTimeUnix  int64    `json:"modTimeUnix"`
+	Success      bool     `json:"success"`
 	Stdout       []byte   `json:"stdout"`
+	Stderr       []byte   `json:"stderr,omitempty"`
+	ExitCode     int      `json:"exitCode,omitempty"`
+	Message      string   `json:"message,omitempty"`
 }
 
 func (d Discoverer) attempts(module string) []commandAttempt {
@@ -182,7 +210,7 @@ func (d Discoverer) attempts(module string) []commandAttempt {
 	}
 	var attempts []commandAttempt
 	for _, path := range d.superprojectBinaryCandidates(module) {
-		attempts = append(attempts, commandAttempt{name: path, args: []string{"help", "--format", "opencli"}})
+		attempts = append(attempts, commandAttempt{name: path, args: []string{"help", "--format", "opencli"}, local: true})
 	}
 	attempts = append(attempts,
 		commandAttempt{name: bus, args: []string{module, "help", "--format", "opencli"}},
@@ -201,6 +229,17 @@ func validateModuleName(module string) error {
 	return nil
 }
 
+// warningMessage returns a concise diagnostic for a failed metadata command.
+//
+// Used by: DiscoverModule.
+func warningMessage(stderr []byte, err error) string {
+	msg := strings.TrimSpace(string(stderr))
+	if msg == "" && err != nil {
+		msg = err.Error()
+	}
+	return msg
+}
+
 // cacheEnabled reports whether live OpenCLI stdout caching may be used.
 //
 // Used by: DiscoverModule.
@@ -208,10 +247,10 @@ func (d Discoverer) cacheEnabled() bool {
 	return d.UseCache && os.Getenv("BUS_OPENCLI_DISCOVERY_CACHE") != "0"
 }
 
-// readCachedStdout returns cached OpenCLI stdout when the command binary is unchanged.
+// readCachedAttempt returns a cached success or failure when the binary is unchanged.
 //
 // Used by: DiscoverModule.
-func (d Discoverer) readCachedStdout(attempt commandAttempt) ([]byte, bool) {
+func (d Discoverer) readCachedAttempt(attempt commandAttempt) (discoveryCacheEntry, bool) {
 	for _, meta := range d.cacheMetadataAll(attempt) {
 		data, err := os.ReadFile(meta.cachePath)
 		if err != nil {
@@ -224,15 +263,35 @@ func (d Discoverer) readCachedStdout(attempt commandAttempt) ([]byte, bool) {
 		if entry.ResolvedPath != meta.resolvedPath || entry.Size != meta.size || entry.ModTimeUnix != meta.modTimeUnix || strings.Join(entry.Args, "\x00") != strings.Join(attempt.args, "\x00") {
 			continue
 		}
-		return entry.Stdout, true
+		if !entry.Success && entry.Message == "" {
+			continue
+		}
+		if entry.Success && len(entry.Stdout) == 0 {
+			continue
+		}
+		return entry, true
 	}
-	return nil, false
+	return discoveryCacheEntry{}, false
 }
 
-// writeCachedStdout stores successful live OpenCLI stdout for unchanged binaries.
+// writeCachedSuccess stores successful live OpenCLI stdout for unchanged binaries.
 //
 // Used by: DiscoverModule.
-func (d Discoverer) writeCachedStdout(attempt commandAttempt, stdout []byte) {
+func (d Discoverer) writeCachedSuccess(attempt commandAttempt, stdout []byte) {
+	d.writeCachedEntry(attempt, discoveryCacheEntry{Success: true, Stdout: append([]byte(nil), stdout...)})
+}
+
+// writeCachedFailure stores non-success metadata discovery outcomes.
+//
+// Used by: DiscoverModule.
+func (d Discoverer) writeCachedFailure(attempt commandAttempt, exitCode int, stderr []byte, message string) {
+	d.writeCachedEntry(attempt, discoveryCacheEntry{Success: false, Stderr: append([]byte(nil), stderr...), ExitCode: exitCode, Message: message})
+}
+
+// writeCachedEntry stores one validated discovery cache entry.
+//
+// Used by: writeCachedSuccess and writeCachedFailure.
+func (d Discoverer) writeCachedEntry(attempt commandAttempt, entry discoveryCacheEntry) {
 	metas := d.cacheMetadataAll(attempt)
 	if len(metas) == 0 {
 		return
@@ -241,14 +300,12 @@ func (d Discoverer) writeCachedStdout(attempt commandAttempt, stdout []byte) {
 		if err := os.MkdirAll(filepath.Dir(meta.cachePath), 0o700); err != nil {
 			continue
 		}
-		entry := discoveryCacheEntry{
-			ResolvedPath: meta.resolvedPath,
-			Args:         append([]string(nil), attempt.args...),
-			Size:         meta.size,
-			ModTimeUnix:  meta.modTimeUnix,
-			Stdout:       append([]byte(nil), stdout...),
-		}
-		data, err := json.Marshal(entry)
+		next := entry
+		next.ResolvedPath = meta.resolvedPath
+		next.Args = append([]string(nil), attempt.args...)
+		next.Size = meta.size
+		next.ModTimeUnix = meta.modTimeUnix
+		data, err := json.Marshal(next)
 		if err != nil {
 			return
 		}

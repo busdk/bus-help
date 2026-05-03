@@ -38,4 +38,9 @@ bus help help --format opencli
 If a module has not opted into structured metadata, `bus-help` reports that
 clearly and leaves normal module help behavior unchanged.
 
+Live discovery uses short timeouts and caches successful or failed OpenCLI
+probe results for unchanged module binaries. Set
+`BUS_OPENCLI_DISCOVERY_CACHE=0` to disable caching or
+`BUS_OPENCLI_DISCOVERY_CACHE_DIR=PATH` to use a specific cache directory.
+
 SDD: sdd/docs/modules/bus-help.md

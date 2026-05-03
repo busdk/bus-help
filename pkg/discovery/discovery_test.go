@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 )
 
 type fakeRunner struct {
@@ -128,6 +129,75 @@ func TestDiscoverModuleCacheDirEnvOverride(t *testing.T) {
 	}
 }
 
+func TestDiscoverModuleCachesFailureForUnchangedLocalBinary(t *testing.T) {
+	workdir := t.TempDir()
+	cacheDir := filepath.Join(workdir, "cache")
+	binaryPath := filepath.Join(workdir, "bus-shell", "bin", "bus-shell")
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := &failingPathRunner{wantName: binaryPath}
+	d := Discoverer{Runner: runner, BusCommand: "missing-bus", Workdir: workdir, CacheDir: cacheDir, UseCache: true}
+	first := d.DiscoverModule(context.Background(), "shell")
+	if first.Found || len(first.Warnings) != 1 {
+		t.Fatalf("first discovery found=%t warnings=%#v", first.Found, first.Warnings)
+	}
+	second := d.DiscoverModule(context.Background(), "shell")
+	if second.Found || len(second.Warnings) != 1 {
+		t.Fatalf("second discovery found=%t warnings=%#v", second.Found, second.Warnings)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("runner calls = %d, want 1", runner.calls)
+	}
+}
+
+func TestDiscoverModuleCachesTimeoutForUnchangedLocalBinary(t *testing.T) {
+	workdir := t.TempDir()
+	cacheDir := filepath.Join(workdir, "cache")
+	binaryPath := filepath.Join(workdir, "bus-shell", "bin", "bus-shell")
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := &timeoutPathRunner{wantName: binaryPath}
+	d := Discoverer{Runner: runner, BusCommand: "missing-bus", Workdir: workdir, CacheDir: cacheDir, Timeout: time.Millisecond, UseCache: true}
+	first := d.DiscoverModule(context.Background(), "shell")
+	if first.Found || len(first.Warnings) != 1 || first.Warnings[0].Message != "metadata command timed out" {
+		t.Fatalf("first discovery found=%t warnings=%#v", first.Found, first.Warnings)
+	}
+	second := d.DiscoverModule(context.Background(), "shell")
+	if second.Found || len(second.Warnings) != 1 || second.Warnings[0].Message != "metadata command timed out" {
+		t.Fatalf("second discovery found=%t warnings=%#v", second.Found, second.Warnings)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("runner calls = %d, want 1", runner.calls)
+	}
+}
+
+func TestDiscoverModuleStopsAfterLocalBinaryFailure(t *testing.T) {
+	workdir := t.TempDir()
+	binaryPath := filepath.Join(workdir, "bus-faq", "bin", "bus-faq")
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := &failingPathRunner{wantName: binaryPath}
+	result := Discoverer{Runner: runner, BusCommand: "missing-bus", Workdir: workdir, UseCache: false}.DiscoverModule(context.Background(), "faq")
+	if result.Found || len(result.Warnings) != 1 {
+		t.Fatalf("found=%t warnings=%#v", result.Found, result.Warnings)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("runner calls = %d, want only local attempt", runner.calls)
+	}
+}
+
 func BenchmarkDiscoverModuleColdFakeRunner(b *testing.B) {
 	workdir := b.TempDir()
 	binaryPath := filepath.Join(workdir, "bus-journal", "bin", "bus-journal")
@@ -193,4 +263,31 @@ func (r *pathSensitiveRunner) Run(ctx context.Context, name string, args []strin
 	r.sawLocalBinary = true
 	r.sawLocalBinaryCount++
 	return []byte(`{"opencli":"0.1.0","info":{"title":"bus-journal"}}`), nil, 0, nil
+}
+
+type failingPathRunner struct {
+	wantName string
+	calls    int
+}
+
+func (r *failingPathRunner) Run(ctx context.Context, name string, args []string, dir string) ([]byte, []byte, int, error) {
+	if name != r.wantName {
+		return nil, []byte("unexpected fallback"), 127, errors.New("unexpected fallback")
+	}
+	r.calls++
+	return nil, []byte("unsupported metadata"), 2, errors.New("unsupported metadata")
+}
+
+type timeoutPathRunner struct {
+	wantName string
+	calls    int
+}
+
+func (r *timeoutPathRunner) Run(ctx context.Context, name string, args []string, dir string) ([]byte, []byte, int, error) {
+	if name != r.wantName {
+		return nil, []byte("unexpected fallback"), 127, errors.New("unexpected fallback")
+	}
+	r.calls++
+	<-ctx.Done()
+	return nil, nil, 1, ctx.Err()
 }
