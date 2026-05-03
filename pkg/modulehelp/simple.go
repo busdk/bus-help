@@ -46,6 +46,9 @@ func SimpleDocument(module string, binary string, summary string, variables []En
 			Options: []opencli.Option{
 				{Name: "--help", Aliases: []string{"-h"}, Description: "Show human-readable help and exit."},
 				{Name: "--version", Aliases: []string{"-V"}, Description: "Print version information and exit."},
+				{Name: "--verbose", Aliases: []string{"-v"}, Description: "Increase diagnostic verbosity; repeat for TRACE."},
+				{Name: "--quiet", Aliases: []string{"-q"}, Description: "Suppress non-error diagnostics."},
+				{Name: "--trace", Description: "Enable TRACE diagnostics; equivalent to -vv."},
 				{Name: "--format", Aliases: []string{"-f"}, ValueName: "format", Description: "Select output format where supported."},
 			},
 			Examples: []opencli.Example{

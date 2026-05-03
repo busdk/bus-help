@@ -43,4 +43,16 @@ probe results for unchanged module binaries. Set
 `BUS_OPENCLI_DISCOVERY_CACHE=0` to disable caching or
 `BUS_OPENCLI_DISCOVERY_CACHE_DIR=PATH` to use a specific cache directory.
 
+## Shared Diagnostics
+
+`bus-help/pkg/diagnostics` owns the shared Bus CLI log-level contract:
+default `INFO`, one `-v`/`--verbose` for `DEBUG`, `-vv`, repeated verbose, or
+`--trace` for `TRACE`, and `--quiet` for `ERROR` only.
+
+`INFO` should record meaningful actions and affected entities without sensitive
+values. `WARN` is for abnormal but possibly recoverable behavior. `ERROR` is
+for clear failures. `DEBUG` is verbose bug-finding detail. `TRACE` is
+exhaustive and may include sensitive values, so it must not be enabled in
+production or live environments.
+
 SDD: sdd/docs/modules/bus-help.md
