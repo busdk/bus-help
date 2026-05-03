@@ -32,6 +32,7 @@ bus help env journal
 bus help config journal
 bus help --format opencli journal
 bus help --format json journal
+bus help help --format opencli
 ```
 
 If a module has not opted into structured metadata, `bus-help` reports that

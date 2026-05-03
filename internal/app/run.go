@@ -12,12 +12,16 @@ import (
 
 	"github.com/busdk/bus-help/pkg/busmeta"
 	"github.com/busdk/bus-help/pkg/discovery"
+	"github.com/busdk/bus-help/pkg/modulehelp"
 )
 
 // Run executes bus-help and returns the intended process exit code.
 //
 // Used by: cmd/bus-help/main.go and CLI tests.
 func Run(args []string, workdir string, stdout io.Writer, stderr io.Writer) int {
+	if handled, code := modulehelp.Handle(args[1:], stdout, stderr, helpText(), openCLIDocument()); handled {
+		return code
+	}
 	flags, rest, err := parse(args[1:])
 	if err != nil {
 		writeUsageError(stderr, err.Error())
@@ -167,7 +171,11 @@ func writeWarnings(w io.Writer, warnings []discovery.Warning) {
 }
 
 func writeHelp(w io.Writer) {
-	io.WriteString(w, `bus-help renders Bus command help and live machine-readable metadata.
+	io.WriteString(w, helpText())
+}
+
+func helpText() string {
+	return `bus-help renders Bus command help and live machine-readable metadata.
 
 Usage:
   bus-help [--format text|opencli|json] MODULE [COMMAND...]
@@ -178,7 +186,7 @@ Examples:
   bus-help journal
   bus-help --format opencli journal
   bus-help env journal
-`)
+`
 }
 
 func writeUsageError(w io.Writer, msg string) {

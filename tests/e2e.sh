@@ -27,6 +27,8 @@ EOF
 chmod +x "$WORKSPACE/bin/bus-journal"
 
 PATH="$WORKSPACE/bin:$PATH" "$BINARY" --format opencli journal | grep -q '"opencli": "0.1.0"'
+PATH="$WORKSPACE/bin:$PATH" "$BINARY" help --format opencli | grep -q '"title": "bus-help"'
+PATH="$WORKSPACE/bin:$PATH" "$BINARY" help --format opencli | grep -q '"io.busdk.environment"'
 PATH="$WORKSPACE/bin:$PATH" "$BINARY" env journal | grep -q 'BUS_JOURNAL_ACTOR'
 PATH="$WORKSPACE/bin:$PATH" "$BINARY" journal | grep -q 'Environment variables: 1'
 echo "PASS bus-help e2e"
