@@ -122,6 +122,9 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 		if d.cacheEnabled() {
 			if cached, ok := d.readCachedAttempt(attempt); ok {
 				if !cached.Success {
+					if cached.Message == "metadata command timed out" {
+						continue
+					}
 					result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: cached.Message})
 					if attempt.local {
 						break
@@ -141,9 +144,6 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 		cancel()
 		if attemptCtx.Err() == context.DeadlineExceeded {
 			result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: "metadata command timed out"})
-			if d.cacheEnabled() {
-				d.writeCachedFailure(attempt, 0, nil, "metadata command timed out")
-			}
 			if attempt.local {
 				break
 			}
@@ -192,6 +192,7 @@ type commandAttempt struct {
 }
 
 type discoveryCacheEntry struct {
+	CacheVersion string   `json:"cacheVersion"`
 	ResolvedPath string   `json:"resolvedPath"`
 	Args         []string `json:"args"`
 	Size         int64    `json:"size"`
@@ -202,6 +203,11 @@ type discoveryCacheEntry struct {
 	ExitCode     int      `json:"exitCode,omitempty"`
 	Message      string   `json:"message,omitempty"`
 }
+
+// discoveryCacheVersion invalidates old OpenCLI stdout cache entries.
+//
+// Used by: readCachedAttempt, writeCachedEntry, and cacheMetadataAll.
+const discoveryCacheVersion = "2"
 
 func (d Discoverer) attempts(module string) []commandAttempt {
 	bus := d.BusCommand
@@ -260,7 +266,7 @@ func (d Discoverer) readCachedAttempt(attempt commandAttempt) (discoveryCacheEnt
 		if err := json.Unmarshal(data, &entry); err != nil {
 			continue
 		}
-		if entry.ResolvedPath != meta.resolvedPath || entry.Size != meta.size || entry.ModTimeUnix != meta.modTimeUnix || strings.Join(entry.Args, "\x00") != strings.Join(attempt.args, "\x00") {
+		if entry.CacheVersion != discoveryCacheVersion || entry.ResolvedPath != meta.resolvedPath || entry.Size != meta.size || entry.ModTimeUnix != meta.modTimeUnix || strings.Join(entry.Args, "\x00") != strings.Join(attempt.args, "\x00") {
 			continue
 		}
 		if !entry.Success && entry.Message == "" {
@@ -301,6 +307,7 @@ func (d Discoverer) writeCachedEntry(attempt commandAttempt, entry discoveryCach
 			continue
 		}
 		next := entry
+		next.CacheVersion = discoveryCacheVersion
 		next.ResolvedPath = meta.resolvedPath
 		next.Args = append([]string(nil), attempt.args...)
 		next.Size = meta.size
@@ -345,7 +352,7 @@ func (d Discoverer) cacheMetadataAll(attempt commandAttempt) []cacheMetadata {
 	if err != nil || info.IsDir() {
 		return nil
 	}
-	keyData := strings.Join(append([]string{resolved}, attempt.args...), "\x00")
+	keyData := strings.Join(append([]string{discoveryCacheVersion, resolved}, attempt.args...), "\x00")
 	sum := sha256.Sum256([]byte(keyData))
 	cacheName := hex.EncodeToString(sum[:]) + ".json"
 	var metas []cacheMetadata

@@ -53,7 +53,10 @@ func TestSimpleDocumentIncludesEnvironmentMetadata(t *testing.T) {
 func TestSimpleDocumentReplacesPlaceholderEnvironmentDescription(t *testing.T) {
 	doc := SimpleDocument("example", "bus-example", "Example command.", []EnvVar{
 		{Name: "BUS_E2E_VERBOSE", Description: "BUS_E2E_VERBOSE setting used by this Bus module."},
+		{Name: "BUS_GATEWAY_LISTEN", Description: "BUS_GATEWAY_LISTEN setting used by this Bus module."},
+		{Name: "OPENAI_API_KEY", Description: "OPENAI_API_KEY setting used by this Bus module.", Secret: true},
 		{Name: "BUS_UNKNOWN_THING", Description: "BUS_UNKNOWN_THING setting used by this Bus module."},
+		{Name: "BUS_", Description: "BUS_ setting used by this Bus module."},
 	})
 	env, ok, err := busmeta.EnvironmentFromDocument(doc)
 	if err != nil || !ok {
@@ -62,8 +65,19 @@ func TestSimpleDocumentReplacesPlaceholderEnvironmentDescription(t *testing.T) {
 	if env.Variables[0].Description == "" || strings.Contains(env.Variables[0].Description, "setting used by this Bus module") {
 		t.Fatalf("standard description not applied: %#v", env.Variables[0])
 	}
-	if env.Variables[1].Description != "" {
-		t.Fatalf("unknown placeholder should not be emitted as real description: %#v", env.Variables[1])
+	if env.Variables[1].Description == "" || strings.Contains(env.Variables[1].Description, "setting used by this Bus module") {
+		t.Fatalf("gateway placeholder should have standard description: %#v", env.Variables[1])
+	}
+	if env.Variables[2].Description == "" || strings.Contains(env.Variables[2].Description, "setting used by this Bus module") {
+		t.Fatalf("secret placeholder should have standard description: %#v", env.Variables[2])
+	}
+	if env.Variables[3].Description != "" {
+		t.Fatalf("unknown placeholder should not be emitted as real description: %#v", env.Variables[3])
+	}
+	for _, variable := range env.Variables {
+		if variable.Name == "BUS_" {
+			t.Fatalf("prefix-only variable should not be emitted: %#v", env.Variables)
+		}
 	}
 }
 

@@ -154,7 +154,7 @@ func TestDiscoverModuleCachesFailureForUnchangedLocalBinary(t *testing.T) {
 	}
 }
 
-func TestDiscoverModuleCachesTimeoutForUnchangedLocalBinary(t *testing.T) {
+func TestDiscoverModuleDoesNotCacheTimeoutForUnchangedLocalBinary(t *testing.T) {
 	workdir := t.TempDir()
 	cacheDir := filepath.Join(workdir, "cache")
 	binaryPath := filepath.Join(workdir, "bus-shell", "bin", "bus-shell")
@@ -174,8 +174,8 @@ func TestDiscoverModuleCachesTimeoutForUnchangedLocalBinary(t *testing.T) {
 	if second.Found || len(second.Warnings) != 1 || second.Warnings[0].Message != "metadata command timed out" {
 		t.Fatalf("second discovery found=%t warnings=%#v", second.Found, second.Warnings)
 	}
-	if runner.calls != 1 {
-		t.Fatalf("runner calls = %d, want 1", runner.calls)
+	if runner.calls != 2 {
+		t.Fatalf("runner calls = %d, want timeout to be retried", runner.calls)
 	}
 }
 

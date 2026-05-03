@@ -1,5 +1,7 @@
 # PLAN.md
 
+- [x] Complete shared environment description coverage for module-owned OpenCLI output: add real purpose text in `pkg/modulehelp` for currently missing Bus environment variables shown by `bus configure --help`, avoid exposing malformed prefix-only names as variables where possible, add tests that representative module metadata no longer emits empty/placeholder descriptions, rebuild affected modules as needed to refresh cacheable OpenCLI output, rerun `time bus configure --help`, and verify module plus scoped superproject gates.
+
 - [x] Add shared OpenCLI discovery performance coverage end to end: benchmark cache-key lookup, cold discovery, warm cached discovery, and warning-heavy fallback paths in `pkg/discovery`; assert warm cache avoids runner execution for unchanged module binaries; keep benchmarks hermetic with fake runners and temporary module binaries; document cache/profiling expectations for consumers such as `bus-configure`; and verify bus-help plus scoped consumer gates.
 
 - [x] Discover superproject module binaries for OpenCLI metadata end to end: extend live discovery so metadata consumers such as `bus-configure --help` can execute `bus-*/bin/bus-*` module binaries from a BusDK superproject checkout when modules are not installed on PATH, preserve existing `bus MODULE help --format opencli` and PATH binary attempts, keep explicit argv execution/timeouts, add unit coverage, and verify bus-help plus consumer gates.
