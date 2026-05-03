@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -152,10 +154,15 @@ func (d Discoverer) attempts(module string) []commandAttempt {
 	if bus == "" {
 		bus = "bus"
 	}
-	return []commandAttempt{
-		{name: bus, args: []string{module, "help", "--format", "opencli"}},
-		{name: "bus-" + module, args: []string{"help", "--format", "opencli"}},
+	var attempts []commandAttempt
+	for _, path := range d.superprojectBinaryCandidates(module) {
+		attempts = append(attempts, commandAttempt{name: path, args: []string{"help", "--format", "opencli"}})
 	}
+	attempts = append(attempts,
+		commandAttempt{name: bus, args: []string{module, "help", "--format", "opencli"}},
+		commandAttempt{name: "bus-" + module, args: []string{"help", "--format", "opencli"}},
+	)
+	return attempts
 }
 
 func validateModuleName(module string) error {
@@ -166,4 +173,35 @@ func validateModuleName(module string) error {
 		return fmt.Errorf("invalid module name: %s", module)
 	}
 	return nil
+}
+
+// superprojectBinaryCandidates returns existing module-local binaries near Workdir.
+//
+// Used by: attempts for BusDK superproject checkout discovery.
+func (d Discoverer) superprojectBinaryCandidates(module string) []string {
+	if d.Workdir == "" {
+		return nil
+	}
+	moduleDir := "bus-" + module
+	binary := moduleDir
+	candidates := []string{
+		filepath.Join(d.Workdir, moduleDir, "bin", binary),
+		filepath.Join(filepath.Dir(d.Workdir), moduleDir, "bin", binary),
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		clean := filepath.Clean(candidate)
+		if seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		info, err := os.Stat(clean)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		out = append(out, clean)
+	}
+	sort.Strings(out)
+	return out
 }
