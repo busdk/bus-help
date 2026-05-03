@@ -5,6 +5,8 @@ package discovery
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -80,6 +82,8 @@ type Discoverer struct {
 	BusCommand string
 	Timeout    time.Duration
 	Workdir    string
+	CacheDir   string
+	UseCache   bool
 }
 
 // New creates a production Discoverer.
@@ -91,6 +95,7 @@ func New(workdir string) Discoverer {
 		BusCommand: "bus",
 		Timeout:    2 * time.Second,
 		Workdir:    workdir,
+		UseCache:   true,
 	}
 }
 
@@ -113,10 +118,20 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 	}
 	attempts := d.attempts(module)
 	for _, attempt := range attempts {
+		commandText := strings.TrimSpace(attempt.name + " " + strings.Join(attempt.args, " "))
+		if d.cacheEnabled() {
+			if stdout, ok := d.readCachedStdout(attempt); ok {
+				var doc opencli.Document
+				if err := json.Unmarshal(stdout, &doc); err == nil {
+					result.Document = doc
+					result.Found = true
+					return result
+				}
+			}
+		}
 		attemptCtx, cancel := context.WithTimeout(ctx, timeout)
 		stdout, stderr, exitCode, err := runner.Run(attemptCtx, attempt.name, attempt.args, d.Workdir)
 		cancel()
-		commandText := strings.TrimSpace(attempt.name + " " + strings.Join(attempt.args, " "))
 		if attemptCtx.Err() == context.DeadlineExceeded {
 			result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: "metadata command timed out"})
 			continue
@@ -134,6 +149,9 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 			result.Warnings = append(result.Warnings, Warning{Module: module, Command: commandText, Message: fmt.Sprintf("invalid OpenCLI JSON: %s", err)})
 			continue
 		}
+		if d.cacheEnabled() {
+			d.writeCachedStdout(attempt, stdout)
+		}
 		result.Document = doc
 		result.Found = true
 		return result
@@ -147,6 +165,14 @@ func (d Discoverer) DiscoverModule(ctx context.Context, module string) Result {
 type commandAttempt struct {
 	name string
 	args []string
+}
+
+type discoveryCacheEntry struct {
+	ResolvedPath string   `json:"resolvedPath"`
+	Args         []string `json:"args"`
+	Size         int64    `json:"size"`
+	ModTimeUnix  int64    `json:"modTimeUnix"`
+	Stdout       []byte   `json:"stdout"`
 }
 
 func (d Discoverer) attempts(module string) []commandAttempt {
@@ -173,6 +199,176 @@ func validateModuleName(module string) error {
 		return fmt.Errorf("invalid module name: %s", module)
 	}
 	return nil
+}
+
+// cacheEnabled reports whether live OpenCLI stdout caching may be used.
+//
+// Used by: DiscoverModule.
+func (d Discoverer) cacheEnabled() bool {
+	return d.UseCache && os.Getenv("BUS_OPENCLI_DISCOVERY_CACHE") != "0"
+}
+
+// readCachedStdout returns cached OpenCLI stdout when the command binary is unchanged.
+//
+// Used by: DiscoverModule.
+func (d Discoverer) readCachedStdout(attempt commandAttempt) ([]byte, bool) {
+	for _, meta := range d.cacheMetadataAll(attempt) {
+		data, err := os.ReadFile(meta.cachePath)
+		if err != nil {
+			continue
+		}
+		var entry discoveryCacheEntry
+		if err := json.Unmarshal(data, &entry); err != nil {
+			continue
+		}
+		if entry.ResolvedPath != meta.resolvedPath || entry.Size != meta.size || entry.ModTimeUnix != meta.modTimeUnix || strings.Join(entry.Args, "\x00") != strings.Join(attempt.args, "\x00") {
+			continue
+		}
+		return entry.Stdout, true
+	}
+	return nil, false
+}
+
+// writeCachedStdout stores successful live OpenCLI stdout for unchanged binaries.
+//
+// Used by: DiscoverModule.
+func (d Discoverer) writeCachedStdout(attempt commandAttempt, stdout []byte) {
+	metas := d.cacheMetadataAll(attempt)
+	if len(metas) == 0 {
+		return
+	}
+	for _, meta := range metas {
+		if err := os.MkdirAll(filepath.Dir(meta.cachePath), 0o700); err != nil {
+			continue
+		}
+		entry := discoveryCacheEntry{
+			ResolvedPath: meta.resolvedPath,
+			Args:         append([]string(nil), attempt.args...),
+			Size:         meta.size,
+			ModTimeUnix:  meta.modTimeUnix,
+			Stdout:       append([]byte(nil), stdout...),
+		}
+		data, err := json.Marshal(entry)
+		if err != nil {
+			return
+		}
+		if err := os.WriteFile(meta.cachePath, data, 0o600); err == nil {
+			return
+		}
+	}
+}
+
+type cacheMetadata struct {
+	resolvedPath string
+	size         int64
+	modTimeUnix  int64
+	cachePath    string
+}
+
+// cacheMetadata returns the cache key material for one command attempt.
+//
+// Used by: readCachedStdout and writeCachedStdout.
+func (d Discoverer) cacheMetadata(attempt commandAttempt) (cacheMetadata, bool) {
+	metas := d.cacheMetadataAll(attempt)
+	if len(metas) == 0 {
+		return cacheMetadata{}, false
+	}
+	return metas[0], true
+}
+
+// cacheMetadataAll returns cache key material for each eligible cache directory.
+//
+// Used by: readCachedStdout, writeCachedStdout, and cacheMetadata.
+func (d Discoverer) cacheMetadataAll(attempt commandAttempt) []cacheMetadata {
+	resolved, ok := resolveCommandPath(attempt.name)
+	if !ok || filepath.Base(resolved) == filepath.Base(d.BusCommand) && !strings.Contains(attempt.name, string(filepath.Separator)) {
+		return nil
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || info.IsDir() {
+		return nil
+	}
+	keyData := strings.Join(append([]string{resolved}, attempt.args...), "\x00")
+	sum := sha256.Sum256([]byte(keyData))
+	cacheName := hex.EncodeToString(sum[:]) + ".json"
+	var metas []cacheMetadata
+	for _, cacheDir := range d.cacheDirs() {
+		metas = append(metas, cacheMetadata{
+			resolvedPath: resolved,
+			size:         info.Size(),
+			modTimeUnix:  info.ModTime().UnixNano(),
+			cachePath:    filepath.Join(cacheDir, cacheName),
+		})
+	}
+	return metas
+}
+
+// cacheDir returns the directory used for validated discovery stdout cache files.
+//
+// Used by: cacheMetadata.
+func (d Discoverer) cacheDir() string {
+	dirs := d.cacheDirs()
+	if len(dirs) == 0 {
+		return ""
+	}
+	return dirs[0]
+}
+
+// cacheDirs returns candidate directories for validated discovery stdout cache files.
+//
+// Used by: cacheMetadataAll and cacheDir.
+func (d Discoverer) cacheDirs() []string {
+	if envDir := strings.TrimSpace(os.Getenv("BUS_OPENCLI_DISCOVERY_CACHE_DIR")); envDir != "" {
+		return []string{envDir}
+	}
+	if d.CacheDir != "" {
+		return []string{d.CacheDir}
+	}
+	var dirs []string
+	dir, err := os.UserCacheDir()
+	if err == nil && dir != "" {
+		dirs = append(dirs, filepath.Join(dir, "busdk", "opencli-discovery"))
+	}
+	dirs = append(dirs, filepath.Join(os.TempDir(), "busdk", "opencli-discovery"))
+	return sortedUniquePaths(dirs)
+}
+
+// resolveCommandPath resolves command names without executing a shell.
+//
+// Used by: cacheMetadata.
+func resolveCommandPath(name string) (string, bool) {
+	if strings.Contains(name, string(filepath.Separator)) {
+		abs, err := filepath.Abs(name)
+		if err != nil {
+			return "", false
+		}
+		return abs, true
+	}
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", false
+	}
+	return path, true
+}
+
+// sortedUniquePaths returns deterministic cleaned path values.
+//
+// Used by: cacheDirs.
+func sortedUniquePaths(values []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		clean := filepath.Clean(value)
+		if seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		out = append(out, clean)
+	}
+	return out
 }
 
 // superprojectBinaryCandidates returns existing module-local binaries near Workdir.

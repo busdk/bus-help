@@ -6,6 +6,9 @@ Local module guidance:
 - `bus-configure` may import reusable packages from `bus-help`, but `bus-help` must not import `bus-configure`.
 - Do not make `bus-configure` a dependency of any other Bus module. Modules that expose metadata should depend on `bus-help` shared metadata packages or serialize their own compatible output.
 - The source of truth for machine-readable help is live command stdout such as `bus journal help --format opencli` and `bus help --format opencli journal`; generated files are export/documentation outputs only.
+- E2E tests that use fake `bus-*` binaries must run commands from the isolated
+  fixture workspace, not from the module checkout, because discovery can also
+  find built sibling `bus-*/bin/bus-*` binaries in a superproject checkout.
 
 # Previous scaffold guidance
 

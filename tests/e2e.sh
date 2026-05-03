@@ -26,6 +26,7 @@ printf '%s\n' 'journal help'
 EOF
 chmod +x "$WORKSPACE/bin/bus-journal"
 
+cd "$WORKSPACE"
 PATH="$WORKSPACE/bin:$PATH" "$BINARY" --format opencli journal | grep -q '"opencli": "0.1.0"'
 PATH="$WORKSPACE/bin:$PATH" "$BINARY" help --format opencli | grep -q '"title": "bus-help"'
 PATH="$WORKSPACE/bin:$PATH" "$BINARY" help --format opencli | grep -q '"io.busdk.environment"'
