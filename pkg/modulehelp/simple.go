@@ -99,7 +99,7 @@ func (v EnvVar) toBusMeta() busmeta.EnvironmentVariable {
 	}
 	return busmeta.EnvironmentVariable{
 		Name:         v.Name,
-		Description:  v.Description,
+		Description:  v.description(),
 		Required:     v.Required,
 		Secret:       v.Secret,
 		Default:      v.Default,
@@ -108,6 +108,20 @@ func (v EnvVar) toBusMeta() busmeta.EnvironmentVariable {
 		Affects:      affects,
 		Scope:        scope,
 	}
+}
+
+// description returns module-provided or standard purpose text for an env var.
+//
+// Used by: EnvVar OpenCLI conversion.
+func (v EnvVar) description() string {
+	description := strings.TrimSpace(v.Description)
+	if description == "" || description == v.Name+" setting used by this Bus module." {
+		if standard := standardDescription(v.Name); standard != "" {
+			return standard
+		}
+		return ""
+	}
+	return description
 }
 
 // StoreInDotenvSet reports whether StoreInDotenv was intentionally set false.
@@ -128,5 +142,45 @@ func inferAffects(name string) string {
 		return "api"
 	default:
 		return "configuration"
+	}
+}
+
+// standardDescription returns shared purpose text for common Bus environment variables.
+//
+// Used by: EnvVar.description.
+func standardDescription(name string) string {
+	switch {
+	case name == "BUS_DEV":
+		return "Path or command used to invoke the local bus-dev helper during module development checks."
+	case name == "BUS_E2E_KEEP":
+		return "Keep temporary e2e workspaces after a test run for debugging."
+	case name == "BUS_E2E_VERBOSE":
+		return "Enable verbose e2e script logging for troubleshooting."
+	case name == "BUS_GO_QUALITY_PROFILE":
+		return "bus-dev quality lint profile used by this module's Makefile lint target."
+	case name == "BUS_API_TOKEN":
+		return "Bus API bearer token used for authenticated API or worker requests."
+	case name == "BUS_EVENTS_API_URL":
+		return "Base URL for the Bus Events API used by event-backed integrations and providers."
+	case name == "BUS_AUTH_API_URL":
+		return "Base URL for the Bus Auth API used to issue or validate Bus credentials."
+	case name == "BUS_AI_API_URL":
+		return "Base URL for the Bus AI API used by AI-facing clients and providers."
+	case name == "BUS_API_URL":
+		return "Base URL for the Bus API used by this module."
+	case strings.HasSuffix(name, "_JWT_SECRET"):
+		return "HS256 JWT signing or verification secret for this module's protected API surface."
+	case strings.HasSuffix(name, "_HS256_SECRET"):
+		return "HS256 JWT signing or verification secret for local Bus authentication."
+	case strings.Contains(name, "POSTGRES_DSN") || strings.Contains(name, "DATABASE_URL"):
+		return "Database connection string used by this module's persistent backend."
+	case strings.Contains(name, "TOKEN"):
+		return "Authentication token used by this module."
+	case strings.Contains(name, "SECRET"):
+		return "Secret value used by this module."
+	case strings.Contains(name, "API_URL") || strings.HasSuffix(name, "_URL"):
+		return "Service URL used by this module."
+	default:
+		return ""
 	}
 }
