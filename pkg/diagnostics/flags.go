@@ -100,8 +100,8 @@ func (f Flags) Level() (Level, error) {
 //
 // Used by: Flags.Level and tests.
 func LevelFor(quiet bool, trace bool, verboseCount int) (Level, error) {
-	if quiet && verboseCount > 0 {
-		return LevelError, fmt.Errorf("--quiet and --verbose are mutually exclusive")
+	if quiet && (trace || verboseCount > 0) {
+		return LevelError, fmt.Errorf("--quiet and --verbose/--trace are mutually exclusive")
 	}
 	if quiet {
 		return LevelError, nil

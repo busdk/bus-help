@@ -20,6 +20,7 @@ func TestLevelFor(t *testing.T) {
 		{name: "double verbose trace", verbose: 2, want: LevelTrace},
 		{name: "trace flag trace", trace: true, want: LevelTrace},
 		{name: "quiet conflicts with verbose", quiet: true, verbose: 1, want: LevelError, wantErr: true},
+		{name: "quiet conflicts with trace", quiet: true, trace: true, want: LevelError, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
