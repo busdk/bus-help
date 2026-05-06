@@ -1,6 +1,6 @@
 # PLAN.md
 
-- [ ] Migrate this CLI to shared Bus diagnostic flag support end to end: use `bus-help/pkg/diagnostics` for standard TRACE, DEBUG, INFO, WARN, and ERROR levels; map default INFO, one `-v`/`--verbose` to DEBUG, `-vv`/repeated verbose/`--trace` to TRACE, and `--quiet` to ERROR-only output; update help/OpenCLI metadata, add focused flag/logging tests, and verify the module's standard gates.
+- [x] Migrate this CLI to shared Bus diagnostic flag support end to end: use `bus-help/pkg/diagnostics` for standard TRACE, DEBUG, INFO, WARN, and ERROR levels; map default INFO, one `-v`/`--verbose` to DEBUG, `-vv`/repeated verbose/`--trace` to TRACE, and `--quiet` to ERROR-only output; update help/OpenCLI metadata, add focused flag/logging tests, and verify the module's standard gates.
 - [x] Add shared Bus diagnostic flag support end to end: provide reusable log levels and verbosity parsing in `bus-help` so modules can consistently map default INFO, `-v`/`--verbose` DEBUG, `-vv`/repeated verbose/`--trace` TRACE, and `--quiet` ERROR-only behavior; update early consumers used by dev-task event debugging; add unit coverage; and verify affected module gates.
 
 - [x] Support discovery cache refresh semantics end to end: add a `bus-help/pkg/discovery` option that skips cached reads for one request while preserving fresh cache writes, cover refresh behavior with deterministic unchanged-binary tests, keep default warm-cache behavior unchanged for `bus help` and consumers, and verify module plus scoped superproject gates.

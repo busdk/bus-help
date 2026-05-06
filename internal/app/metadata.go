@@ -21,7 +21,7 @@ func openCLIDocument() opencli.Document {
 			{
 				Name:    "module",
 				Summary: "Render help metadata for one module.",
-				Usage:   "bus-help [--format text|opencli|json] MODULE [COMMAND...]",
+				Usage:   "bus-help [--format text|opencli|json] [-v|-vv|--trace|--quiet] MODULE [COMMAND...]",
 				Arguments: []opencli.Argument{
 					{Name: "MODULE", Required: true, Description: "Bus module name without the bus- prefix."},
 					{Name: "COMMAND", Repeatable: true, Description: "Optional command path within the module."},
@@ -36,20 +36,22 @@ func openCLIDocument() opencli.Document {
 			{
 				Name:    "env",
 				Summary: "Render Bus environment metadata for one module.",
-				Usage:   "bus-help env MODULE",
+				Usage:   "bus-help [--format text|opencli|json] [-v|-vv|--trace|--quiet] env MODULE",
 				Arguments: []opencli.Argument{
 					{Name: "MODULE", Required: true, Description: "Bus module name without the bus- prefix."},
 				},
+				Options:   commonOptions(),
 				Examples:  []opencli.Example{{Summary: "Show environment variables for journal.", Command: "bus-help env journal"}},
 				ExitCodes: exitCodes(),
 			},
 			{
 				Name:    "config",
 				Summary: "Render Bus configuration metadata for one module.",
-				Usage:   "bus-help config MODULE",
+				Usage:   "bus-help [--format text|opencli|json] [-v|-vv|--trace|--quiet] config MODULE",
 				Arguments: []opencli.Argument{
 					{Name: "MODULE", Required: true, Description: "Bus module name without the bus- prefix."},
 				},
+				Options:   commonOptions(),
 				Examples:  []opencli.Example{{Summary: "Show configuration metadata for journal.", Command: "bus-help config journal"}},
 				ExitCodes: exitCodes(),
 			},
@@ -64,13 +66,22 @@ func openCLIDocument() opencli.Document {
 	return doc
 }
 
+// commonOptions returns bus-help global options for OpenCLI command metadata.
+//
+// Used by: openCLIDocument.
 func commonOptions() []opencli.Option {
 	return []opencli.Option{
 		{Name: "--format", Aliases: []string{"-f"}, ValueName: "text|opencli|json", Description: "Select output format.", Default: "text"},
 		{Name: "--help", Aliases: []string{"-h"}, Description: "Show human-readable help and exit."},
+		{Name: "--verbose", Aliases: []string{"-v"}, Description: "Increase diagnostic verbosity to DEBUG; repeat for TRACE.", Repeatable: true},
+		{Name: "--quiet", Aliases: []string{"-q"}, Description: "Suppress non-error diagnostics."},
+		{Name: "--trace", Description: "Enable TRACE diagnostics; equivalent to -vv."},
 	}
 }
 
+// exitCodes returns bus-help process statuses for OpenCLI command metadata.
+//
+// Used by: openCLIDocument.
 func exitCodes() []opencli.ExitCode {
 	return []opencli.ExitCode{
 		{Code: 0, Description: "Success."},

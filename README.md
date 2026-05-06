@@ -32,6 +32,9 @@ bus help env journal
 bus help config journal
 bus help --format opencli journal
 bus help --format json journal
+bus help -v journal
+bus help --trace journal
+bus help --quiet journal
 bus help help --format opencli
 ```
 

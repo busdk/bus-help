@@ -32,4 +32,9 @@ PATH="$WORKSPACE/bin:$PATH" "$BINARY" help --format opencli | grep -q '"title": 
 PATH="$WORKSPACE/bin:$PATH" "$BINARY" help --format opencli | grep -q '"io.busdk.environment"'
 PATH="$WORKSPACE/bin:$PATH" "$BINARY" env journal | grep -q 'BUS_JOURNAL_ACTOR'
 PATH="$WORKSPACE/bin:$PATH" "$BINARY" journal | grep -q 'Environment variables: 1'
+PATH="$WORKSPACE/bin:$PATH" "$BINARY" -v journal > "$WORKSPACE/debug.out" 2> "$WORKSPACE/debug.err"
+grep -q 'bus-journal' "$WORKSPACE/debug.out"
+grep -q 'bus-help: DEBUG:' "$WORKSPACE/debug.err"
+PATH="$WORKSPACE/bin:$PATH" "$BINARY" --trace journal > "$WORKSPACE/trace.out" 2> "$WORKSPACE/trace.err"
+grep -q 'bus-help: TRACE:' "$WORKSPACE/trace.err"
 echo "PASS bus-help e2e"
