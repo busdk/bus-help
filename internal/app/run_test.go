@@ -2,13 +2,14 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/busdk/bus-help/pkg/busmeta"
+	"github.com/busdk/bus-help/pkg/discovery"
 	"github.com/busdk/bus-help/pkg/opencli"
 )
 
@@ -49,12 +50,7 @@ func TestRunSelfOpenCLIHelpAllowsDiagnosticFlagsBeforeHelp(t *testing.T) {
 
 func TestRunDiscoveryWarningsRespectQuiet(t *testing.T) {
 	workdir := t.TempDir()
-	binDir := filepath.Join(workdir, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatalf("mkdir bin: %v", err)
-	}
-	t.Setenv("PATH", binDir)
-	t.Setenv("BUS_OPENCLI_DISCOVERY_CACHE", "0")
+	withDiscoverer(t, failingDiscoveryRunner{})
 
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"bus-help", "journal"}, workdir, &stdout, &stderr)
@@ -78,20 +74,7 @@ func TestRunDiscoveryWarningsRespectQuiet(t *testing.T) {
 
 func TestRunVerboseAndTraceDiagnostics(t *testing.T) {
 	workdir := t.TempDir()
-	binDir := filepath.Join(workdir, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatalf("mkdir bin: %v", err)
-	}
-	writeExecutable(t, filepath.Join(binDir, "bus"), `#!/bin/sh
-if [ "$1" = "journal" ] && [ "$2" = "help" ] && [ "$3" = "--format" ] && [ "$4" = "opencli" ]; then
-  printf '%s\n' '{"opencli":"0.1.0","info":{"title":"bus-journal","summary":"Journal help"}}'
-  exit 0
-fi
-printf '%s\n' 'unexpected bus args' >&2
-exit 2
-`)
-	t.Setenv("PATH", binDir)
-	t.Setenv("BUS_OPENCLI_DISCOVERY_CACHE", "0")
+	withDiscoverer(t, successfulDiscoveryRunner{})
 
 	tests := []struct {
 		name      string
@@ -144,13 +127,6 @@ func TestRunQuietConflictsWithVerboseAndTrace(t *testing.T) {
 	}
 }
 
-func writeExecutable(t *testing.T, path string, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
-		t.Fatalf("write executable %s: %v", path, err)
-	}
-}
-
 func documentOption(doc opencli.Document, name string) bool {
 	for _, command := range doc.Commands {
 		for _, option := range command.Options {
@@ -160,4 +136,35 @@ func documentOption(doc opencli.Document, name string) bool {
 		}
 	}
 	return false
+}
+
+func withDiscoverer(t *testing.T, runner discovery.Runner) {
+	t.Helper()
+	previous := newDiscoverer
+	newDiscoverer = func(workdir string) discovery.Discoverer {
+		return discovery.Discoverer{
+			Runner:     runner,
+			BusCommand: "bus",
+			Workdir:    workdir,
+			UseCache:   false,
+		}
+	}
+	t.Cleanup(func() {
+		newDiscoverer = previous
+	})
+}
+
+type successfulDiscoveryRunner struct{}
+
+func (successfulDiscoveryRunner) Run(ctx context.Context, name string, args []string, dir string) ([]byte, []byte, int, error) {
+	if name == "bus" && strings.Join(args, "\x00") == "journal\x00help\x00--format\x00opencli" {
+		return []byte(`{"opencli":"0.1.0","info":{"title":"bus-journal","summary":"Journal help"}}`), nil, 0, nil
+	}
+	return nil, []byte("unexpected discovery command"), 2, errors.New("unexpected discovery command")
+}
+
+type failingDiscoveryRunner struct{}
+
+func (failingDiscoveryRunner) Run(ctx context.Context, name string, args []string, dir string) ([]byte, []byte, int, error) {
+	return nil, []byte("metadata unavailable"), 1, errors.New("metadata unavailable")
 }

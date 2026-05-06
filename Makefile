@@ -24,7 +24,8 @@ RUN_BENCHMETA ?= 0
 
 -include Makefile.local
 
-BINARY ?= $(notdir $(abspath $(CURDIR)))
+MODULE_PATH := $(shell $(GO) list -m 2>/dev/null)
+BINARY ?= $(notdir $(MODULE_PATH))
 MODULE_DIR := $(notdir $(abspath $(CURDIR)))
 DOCKER ?= docker
 DOCKER_TEST_IMAGE ?= $(MODULE_DIR)-test

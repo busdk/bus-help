@@ -16,6 +16,11 @@ import (
 	"github.com/busdk/bus-help/pkg/modulehelp"
 )
 
+// newDiscoverer constructs live metadata discovery for the CLI.
+//
+// Used by: Run and tests that inject deterministic discovery runners.
+var newDiscoverer = discovery.New
+
 // Run executes bus-help and returns the intended process exit code.
 //
 // Used by: cmd/bus-help/main.go and CLI tests.
@@ -77,7 +82,7 @@ func Run(args []string, workdir string, stdout io.Writer, stderr io.Writer) int 
 		module := rest[0]
 		log.Debug("discovering module metadata: module=%s", module)
 		log.Trace("discovery context: workdir=%s format=%s", workdir, flags.format)
-		result := discovery.New(workdir).DiscoverModule(context.Background(), module)
+		result := newDiscoverer(workdir).DiscoverModule(context.Background(), module)
 		writeWarnings(log, result.Warnings)
 		if !result.Found {
 			if flags.format == "text" {
@@ -182,7 +187,7 @@ func parse(args []string) (flags, []string, error) {
 func renderEnvironment(workdir string, module string, format string, stdout io.Writer, log logger) int {
 	log.Debug("discovering environment metadata: module=%s", module)
 	log.Trace("environment discovery context: workdir=%s format=%s", workdir, format)
-	result := discovery.New(workdir).DiscoverModule(context.Background(), module)
+	result := newDiscoverer(workdir).DiscoverModule(context.Background(), module)
 	writeWarnings(log, result.Warnings)
 	if !result.Found {
 		return 1
