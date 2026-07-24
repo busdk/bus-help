@@ -1,0 +1,11 @@
+# Testing instructions
+
+Moved verbatim from the root `AGENTS.md`; the root keeps the summary
+paragraph and routes here.
+
+- **Unit tests:** Cover flag parsing, validation logic, schema enforcement, and deterministic listing. Use `go test ./...`; no network or external services ([Testing strategy](https://docs.busdk.com/testing/testing-strategy)).
+- **Command-level / E2E:** Exercise `init`, `add`, `set`, `list`, `validate`, and `sole-proprietor` against fixture workspaces; assert exit codes, stdout/stderr, and (for mutating commands) resulting files. Use isolated fixture directories (e.g. under `tests/` or temp dirs) so tests do not share state. Tests MUST verify that `add` fails with non-zero exit and no dataset change when the account code already exists (FR-ACC-004), and that `set` can modify an existing account and fails when the account does not exist ([bus-accounts SDD Testing strategy](sdd/docs/modules/bus-accounts.md)).
+- **Required regression and compatibility (per SDD):** (1) E2E or command-level test runs `bus accounts init` in an empty workspace, then `bus accounts validate`, and asserts success. (2) **Journal-add regression test:** The SDD-required test (after `bus accounts init` and minimal init for journal/period if needed, run a simple `bus journal add` that references accounts and assert it does not fail due to schema parsing or foreign key reference errors) is maintained in the **BusDK superproject** e2e when the bus-journal module is available. See the [BusDK superproject](https://github.com/busdk/busdk) and its e2e or integration test suite for the cross-module regression. This module’s e2e does not invoke other modules; do not add a duplicate test that depends on a `bus-journal` binary in this repo unless the superproject does not cover it. (3) Negative test: from an intentionally malformed `accounts.schema.json` (e.g. `foreignKeys` entry with missing `reference.resource`), assert `bus accounts validate` fails with a clear diagnostic pointing to the schema file and the offending foreign key. Implementers MUST keep these tests in place so the invalid-schema bug cannot recur.
+- **Coverage:** Do not decrease coverage; add tests for new behavior and for any bug fix that can be reproduced by a test.
+
+---
