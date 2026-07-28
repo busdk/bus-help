@@ -1,5 +1,14 @@
 # AGENTS.md — bus-help
 
+## Highest-Priority Rule: Precise Language And Precise Reasoning
+
+Precise language is part of precise reasoning. Before acting or reporting, name
+the exact object, action, scope, evidence, and uncertainty. State what changed
+and what did not change. Never use a broader claim than the evidence supports.
+If an exact, unambiguous sentence cannot be written, inspect the evidence or
+ask for clarification before proceeding.
+
+
 Local module guidance:
 
 - `bus-help` owns shared OpenCLI-compatible structs, Bus namespaced metadata structs, conversion helpers, and live metadata discovery helpers for the metadata-driven help/configuration feature.
